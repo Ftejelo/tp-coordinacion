@@ -6,7 +6,7 @@ En este trabajo se busca familiarizar a los estudiantes con los desafíos de la 
 
 ## Condiciones de Entrega
 
-El código de este repositorio se agrupa en dos carpetas, una para Python y otra para Golang. Los estudiantes deberán elegir **sólo uno** de estos lenguajes y realizar una implementación que funcione correctamente ante cambios en la multiplicidad de los controles (archivo de docker compose), los archivos de entrada y las implementaciones de las funciones de Suma y Comparación del `FruitItem`.
+El código de este repositorio se implementa en Python. Los estudiantes deberán realizar una implementación que funcione correctamente ante cambios en la multiplicidad de los controles (archivo de docker compose), los archivos de entrada y las implementaciones de las funciones de Suma y Comparación del `FruitItem`.
 
 ![ ](./imgs/mutabilidad.jpg  "Mutabilidad de Elementos")
 *Fig. 2: Elementos mutables e inmutables*
