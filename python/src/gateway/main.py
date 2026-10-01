@@ -3,6 +3,7 @@ import logging
 import socket
 import signal
 import multiprocessing
+import itertools
 import message_handler
 from common import middleware, message_protocol
 
@@ -47,29 +48,36 @@ def handle_client_response(client_list):
     input_queue = middleware.MessageMiddlewareQueueRabbitMQ(MOM_HOST, INPUT_QUEUE)
 
     def _consume_result(message, ack, nack):
-        client_index = 0
         try:
-            for [message_handler_instance, client_socket] in client_list:
-                deserialized_message = (
-                    message_handler_instance.deserialize_result_message(message)
-                )
-
-                if not deserialized_message:
-                    client_index += 1
-                    continue
-
-                message_protocol.external.send_msg(
-                    client_socket,
-                    message_protocol.external.MsgType.FRUIT_TOP,
-                    deserialized_message,
-                )
-                message_protocol.external.recv_msg(client_socket)
-                break
+            fields = message_protocol.internal.deserialize(message)
+            client_id = fields[0] if fields else None
+            fruit_top = fields[1:] if fields else []
+            
+            client_index = -1
+            for i, [message_handler_instance, client_socket] in enumerate(client_list):
+                if message_handler_instance.client_id == client_id:
+                    client_index = i
+                    break
+            
+            if client_index == -1:
+                logging.error(f"Client ID {client_id} not found in client list")
+                ack()
+                return
+            
+            message_handler_instance, client_socket = client_list[client_index]
+            
+            message_protocol.external.send_msg(
+                client_socket,
+                message_protocol.external.MsgType.FRUIT_TOP,
+                fruit_top,
+            )
+            message_protocol.external.recv_msg(client_socket)
             client_list.pop(client_index)
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")
-            client_list.pop(client_index)
+            if client_index >= 0:
+                client_list.pop(client_index)
             ack()
         except Exception as e:
             logging.error(e)
@@ -93,6 +101,7 @@ def main():
     with multiprocessing.Manager() as manager:
         client_list = manager.list()
         sigterm_received = manager.Value("c_short", 0)
+        client_id_counter = itertools.count(1)
         with multiprocessing.Pool(processes=os.process_cpu_count()) as processes_pool:
             processes_pool.apply_async(handle_client_response, (client_list,))
 
@@ -112,6 +121,7 @@ def main():
 
                         logging.info("A new client has connected")
                         message_handler_instance = message_handler.MessageHandler()
+                        message_handler_instance.client_id = next(client_id_counter)
                         client_list.append([message_handler_instance, client_socket])
                         processes_pool.apply_async(
                             handle_client_request,
