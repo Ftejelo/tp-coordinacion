@@ -1,6 +1,5 @@
-import os
 import logging
-import bisect
+import os
 
 from common import middleware, message_protocol, fruit_item
 
@@ -24,31 +23,40 @@ class AggregationFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.fruit_top_by_client = {}
+        self.eof_count_by_client = {}
         self.client_id = None
 
     def _process_data(self, client_id, fruit, amount):
         logging.info("Processing data message")
         fruit_top = self.fruit_top_by_client.setdefault(client_id, [])
-        for i in range(len(fruit_top)):
-            if fruit_top[i].fruit == fruit:
-                fruit_top[i] = fruit_top[i] + fruit_item.FruitItem(fruit, amount)
+        for index, current_fruit in enumerate(fruit_top):
+            if current_fruit.fruit == fruit:
+                fruit_top[index] = current_fruit + fruit_item.FruitItem(fruit, amount)
+                fruit_top.sort(reverse=True)
                 return
-        bisect.insort(fruit_top, fruit_item.FruitItem(fruit, amount))
+        fruit_top.append(fruit_item.FruitItem(fruit, amount))
+        fruit_top.sort(reverse=True)
 
     def _process_eof(self, client_id):
         logging.info("Received EOF")
         self.client_id = client_id
+        eof_count = self.eof_count_by_client.get(client_id, 0) + 1
+        self.eof_count_by_client[client_id] = eof_count
+
+        if eof_count < SUM_AMOUNT:
+            return
+
         fruit_top = self.fruit_top_by_client.get(client_id, [])
-        fruit_chunk = list(fruit_top[-TOP_SIZE:])
-        fruit_chunk.reverse()
+        fruit_chunk = sorted(fruit_top, reverse=True)[:TOP_SIZE]
         fruit_top_payload = list(
             map(
-                lambda fruit_item: (fruit_item.fruit, fruit_item.amount),
+                lambda fruit_item_entry: (fruit_item_entry.fruit, fruit_item_entry.amount),
                 fruit_chunk,
             )
         )
         self.output_queue.send(message_protocol.internal.serialize([client_id] + fruit_top_payload))
         self.fruit_top_by_client.pop(client_id, None)
+        self.eof_count_by_client.pop(client_id, None)
 
     def process_messsage(self, message, ack, nack):
         logging.info("Process message")
